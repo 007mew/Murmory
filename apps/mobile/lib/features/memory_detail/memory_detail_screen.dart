@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:murmory/core/design_system/tokens.dart';
 import 'package:murmory/core/design_system/widgets/liquid_glass.dart';
 import 'package:murmory/core/database/database.dart';
@@ -23,8 +25,11 @@ class MemoryDetailScreen extends ConsumerStatefulWidget {
 class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
   late final AudioPlayer _player;
   bool _isPlaying = false;
+  bool _isScrubbing = false;
+  double _dragProgress = 0.0;
   Duration _currentPos = Duration.zero;
   Duration _totalDuration = Duration.zero;
+  bool _isTranscribing = false;
 
   @override
   void initState() {
@@ -37,22 +42,118 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
     final memoriesDao = ref.read(memoriesDaoProvider);
     final memory = await memoriesDao.getById(widget.id);
     if (memory != null && memory.audioFilePath.isNotEmpty) {
-      try {
-        await _player.setFilePath(memory.audioFilePath);
-        _player.playerStateStream.listen((state) {
-          if (mounted) {
-            setState(() {
-              _isPlaying = state.playing && state.processingState != ProcessingState.completed;
-            });
+      final file = File(memory.audioFilePath);
+      if (await file.exists()) {
+        try {
+          if (memory.durationMs > 0) {
+            _totalDuration = Duration(milliseconds: memory.durationMs);
           }
-        });
-        _player.positionStream.listen((pos) {
-          if (mounted) setState(() => _currentPos = pos);
-        });
-        _player.durationStream.listen((dur) {
-          if (mounted && dur != null) setState(() => _totalDuration = dur);
-        });
-      } catch (_) {}
+          await _player.setFilePath(memory.audioFilePath);
+
+          _player.playerStateStream.listen((state) {
+            if (!mounted) return;
+            final isCompleted = state.processingState == ProcessingState.completed;
+            setState(() {
+              _isPlaying = state.playing && !isCompleted;
+              if (isCompleted) {
+                _currentPos = _totalDuration;
+              }
+            });
+          });
+
+          _player.positionStream.listen((pos) {
+            if (!mounted) return;
+            if (!_isScrubbing) {
+              setState(() => _currentPos = pos);
+            }
+          });
+
+          _player.durationStream.listen((dur) {
+            if (!mounted) return;
+            if (dur != null && dur > Duration.zero) {
+              setState(() => _totalDuration = dur);
+            }
+          });
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _togglePlay() async {
+    await HapticFeedback.lightImpact();
+    if (_isPlaying) {
+      await _player.pause();
+    } else {
+      if (_player.processingState == ProcessingState.completed ||
+          _currentPos >= _totalDuration - const Duration(milliseconds: 250)) {
+        await _player.seek(Duration.zero);
+      }
+      await _player.play();
+    }
+  }
+
+  Future<void> _seekRelative(int seconds) async {
+    await HapticFeedback.selectionClick();
+    final target = _currentPos + Duration(seconds: seconds);
+    final clamped = target < Duration.zero
+        ? Duration.zero
+        : (target > _totalDuration ? _totalDuration : target);
+    await _player.seek(clamped);
+    if (mounted) setState(() => _currentPos = clamped);
+  }
+
+  Future<void> _transcribeWithGoogleSpeech(Memory memory) async {
+    final prefs = await SharedPreferences.getInstance();
+    final googleKey = prefs.getString('google_api_key')?.trim();
+
+    if (!mounted) return;
+
+    if (googleKey == null || googleKey.isEmpty) {
+      unawaited(showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Google API Key Required'),
+          content: const Text(
+            'Please enter your free Google Cloud or Gemini API key in Settings -> Transcription Engine to enable Google Speech-to-Text.',
+          ),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              child: const Text('Open Settings'),
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.push('/settings');
+              },
+            ),
+          ],
+        ),
+      ));
+      return;
+    }
+
+    setState(() => _isTranscribing = true);
+
+    try {
+      final pipeline = ref.read(transcriptionPipelineProvider);
+      await pipeline.processMemory(memory.id, memory.audioFilePath, memory.durationMs);
+
+      if (mounted) {
+        setState(() => _isTranscribing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Transcription complete via Google Speech.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isTranscribing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google Speech transcription failed: $e')),
+        );
+      }
     }
   }
 
@@ -298,7 +399,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                 final dateFormatted = DateFormat('MMMM d, yyyy • h:mm a').format(memory.createdAt);
 
                 return CustomScrollView(
-                  physics: const BouncingScrollPhysics(),
+                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                   slivers: [
                     // iOS Navigation Bar
                     SliverToBoxAdapter(
@@ -308,7 +409,6 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             LiquidGlass(
-                              blur: 16,
                               borderRadius: 22,
                               padding: EdgeInsets.zero,
                               onTap: () => context.pop(),
@@ -331,7 +431,6 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                             Row(
                               children: [
                                 LiquidGlass(
-                                  blur: 16,
                                   borderRadius: 22,
                                   padding: EdgeInsets.zero,
                                   onTap: () async {
@@ -351,7 +450,6 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 LiquidGlass(
-                                  blur: 16,
                                   borderRadius: 22,
                                   padding: EdgeInsets.zero,
                                   onTap: () => _deleteMemory(memory),
@@ -468,9 +566,8 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                             ),
                             const SizedBox(height: 24),
 
-                            // Liquid Glass Audio Player
+                            // Bug-Free Smooth iOS Audio Player Card
                             LiquidGlass(
-                              blur: 20,
                               borderRadius: 24,
                               padding: const EdgeInsets.all(20),
                               child: Column(
@@ -479,7 +576,9 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                        _formatDuration(_currentPos),
+                                        _formatDuration(_isScrubbing
+                                            ? Duration(milliseconds: (_dragProgress * _totalDuration.inMilliseconds).round())
+                                            : _currentPos),
                                         style: const TextStyle(
                                           fontSize: 13,
                                           color: Colors.white70,
@@ -506,12 +605,31 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                       trackHeight: 3.5,
                                     ),
                                     child: Slider(
-                                      value: _totalDuration.inMilliseconds > 0
-                                          ? (_currentPos.inMilliseconds / _totalDuration.inMilliseconds).clamp(0.0, 1.0)
-                                          : 0.0,
+                                      value: _isScrubbing
+                                          ? _dragProgress
+                                          : (_totalDuration.inMilliseconds > 0
+                                              ? (_currentPos.inMilliseconds / _totalDuration.inMilliseconds).clamp(0.0, 1.0)
+                                              : 0.0),
+                                      onChangeStart: (val) {
+                                        setState(() {
+                                          _isScrubbing = true;
+                                          _dragProgress = val;
+                                        });
+                                      },
                                       onChanged: (val) {
+                                        setState(() {
+                                          _dragProgress = val;
+                                        });
+                                      },
+                                      onChangeEnd: (val) async {
                                         final target = Duration(milliseconds: (val * _totalDuration.inMilliseconds).round());
-                                        _player.seek(target);
+                                        await _player.seek(target);
+                                        if (mounted) {
+                                          setState(() {
+                                            _isScrubbing = false;
+                                            _currentPos = target;
+                                          });
+                                        }
                                       },
                                     ),
                                   ),
@@ -522,24 +640,11 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                       IconButton(
                                         icon: const Icon(CupertinoIcons.gobackward_10, color: Colors.white70),
                                         iconSize: 26,
-                                        onPressed: () {
-                                          final target = _currentPos - const Duration(seconds: 10);
-                                          _player.seek(target < Duration.zero ? Duration.zero : target);
-                                        },
+                                        onPressed: () => _seekRelative(-10),
                                       ),
                                       const SizedBox(width: 20),
                                       GestureDetector(
-                                        onTap: () {
-                                          HapticFeedback.lightImpact();
-                                          if (_isPlaying) {
-                                            _player.pause();
-                                          } else {
-                                            if (_currentPos >= _totalDuration) {
-                                              _player.seek(Duration.zero);
-                                            }
-                                            _player.play();
-                                          }
-                                        },
+                                        onTap: _togglePlay,
                                         child: Container(
                                           width: 58,
                                           height: 58,
@@ -567,12 +672,54 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                       IconButton(
                                         icon: const Icon(CupertinoIcons.goforward_10, color: Colors.white70),
                                         iconSize: 26,
-                                        onPressed: () {
-                                          final target = _currentPos + const Duration(seconds: 10);
-                                          _player.seek(target > _totalDuration ? _totalDuration : target);
-                                        },
+                                        onPressed: () => _seekRelative(10),
                                       ),
                                     ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+
+                            // Google Speech-to-Text Button
+                            LiquidGlass(
+                              borderRadius: 18,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.blueAccent.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(CupertinoIcons.sparkles, color: Colors.blueAccent, size: 20),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Google Speech-to-Text',
+                                          style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 14),
+                                        ),
+                                        Text(
+                                          'Accurate speech transcription with timestamps',
+                                          style: TextStyle(fontSize: 11, color: Colors.white54),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  CupertinoButton(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    color: Colors.blueAccent.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(10),
+                                    onPressed: _isTranscribing ? null : () => _transcribeWithGoogleSpeech(memory),
+                                    child: _isTranscribing
+                                        ? const CupertinoActivityIndicator(color: Colors.white)
+                                        : const Text('Transcribe', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
                                   ),
                                 ],
                               ),
@@ -611,7 +758,6 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
 
                                 if (segments.isEmpty) {
                                   return LiquidGlass(
-                                    blur: 16,
                                     borderRadius: 20,
                                     padding: const EdgeInsets.all(24),
                                     child: Column(
@@ -619,30 +765,14 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                         const Icon(CupertinoIcons.waveform, size: 40, color: MurmoryColors.accentLight),
                                         const SizedBox(height: 12),
                                         const Text(
-                                          'No transcript yet',
+                                          'No transcript generated yet',
                                           style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 16),
                                         ),
                                         const SizedBox(height: 6),
                                         Text(
-                                          'Run on-device transcription or transcribe with Whisper.',
+                                          'Tap the button above to transcribe with Google Speech-to-Text.',
                                           textAlign: TextAlign.center,
                                           style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.55)),
-                                        ),
-                                        const SizedBox(height: 16),
-                                        CupertinoButton.filled(
-                                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                          onPressed: () {
-                                            final pipeline = ref.read(transcriptionPipelineProvider);
-                                            pipeline.processMemory(memory.id, memory.audioFilePath, memory.durationMs);
-                                          },
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(CupertinoIcons.arrow_clockwise, size: 16),
-                                              SizedBox(width: 8),
-                                              Text('Transcribe Now'),
-                                            ],
-                                          ),
                                         ),
                                       ],
                                     ),
@@ -653,7 +783,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                   shrinkWrap: true,
                                   physics: const NeverScrollableScrollPhysics(),
                                   itemCount: segments.length,
-                                  separatorBuilder: (ctx, i) => const SizedBox(height: 10),
+                                  separatorBuilder: (ctx, i) => const SizedBox(height: 8),
                                   itemBuilder: (ctx, i) {
                                     final seg = segments[i];
                                     final isCurrentlyPlaying = currentMs >= seg.startMs && currentMs < seg.endMs;
@@ -662,16 +792,15 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                     final secStr = (startSec % 60).toString().padLeft(2, '0');
 
                                     return LiquidGlass(
-                                      blur: 14,
                                       borderRadius: 16,
                                       padding: const EdgeInsets.all(14),
-                                      opacity: isCurrentlyPlaying ? 0.20 : 0.06,
-                                      borderOpacity: isCurrentlyPlaying ? 0.45 : 0.12,
+                                      opacity: isCurrentlyPlaying ? 0.20 : 0.05,
+                                      borderOpacity: isCurrentlyPlaying ? 0.45 : 0.10,
                                       tintColor: isCurrentlyPlaying ? MurmoryColors.accent : Colors.white,
-                                      onTap: () {
-                                        HapticFeedback.selectionClick();
-                                        _player.seek(Duration(milliseconds: seg.startMs));
-                                        if (!_isPlaying) _player.play();
+                                      onTap: () async {
+                                        await HapticFeedback.selectionClick();
+                                        await _player.seek(Duration(milliseconds: seg.startMs));
+                                        if (!_isPlaying) await _player.play();
                                       },
                                       child: Row(
                                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -681,7 +810,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                             decoration: BoxDecoration(
                                               color: isCurrentlyPlaying
                                                   ? MurmoryColors.accent
-                                                  : Colors.white.withValues(alpha: 0.1),
+                                                  : Colors.white.withValues(alpha: 0.08),
                                               borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: Text(

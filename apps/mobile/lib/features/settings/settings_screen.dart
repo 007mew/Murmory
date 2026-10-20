@@ -20,6 +20,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _localOnlyMode = true;
   bool _liveSttEnabled = true;
   String _groqApiKey = '';
+  String _googleApiKey = '';
   int _memoriesCount = 0;
   String _vaultSizeStr = 'Calculating...';
 
@@ -36,6 +37,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _localOnlyMode = prefs.getBool('local_only_mode') ?? true;
       _liveSttEnabled = prefs.getBool('live_stt_enabled') ?? true;
       _groqApiKey = prefs.getString('groq_api_key') ?? '';
+      _googleApiKey = prefs.getString('google_api_key') ?? '';
     });
   }
 
@@ -49,6 +51,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('live_stt_enabled', value);
     setState(() => _liveSttEnabled = value);
+  }
+
+  Future<void> _showGoogleApiKeyDialog() async {
+    final controller = TextEditingController(text: _googleApiKey);
+    final updated = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Google Speech-to-Text API Key'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter your Google Cloud or Gemini API key (AIza...) for high-accuracy speech transcription in English, Hindi & Hinglish with word timestamps.',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: controller,
+                placeholder: 'AIzaSy...',
+                placeholderStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('Clear'),
+            onPressed: () => Navigator.pop(ctx, ''),
+          ),
+          CupertinoDialogAction(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            child: const Text('Save'),
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+          ),
+        ],
+      ),
+    );
+
+    if (updated != null && mounted) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('google_api_key', updated);
+      setState(() => _googleApiKey = updated);
+    }
   }
 
   Future<void> _showApiKeyDialog() async {
@@ -426,6 +479,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                     onChanged: _setLiveSttEnabled,
                                   ),
                                 ],
+                              ),
+                              Divider(color: Colors.white.withValues(alpha: 0.08)),
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _showGoogleApiKeyDialog,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(CupertinoIcons.sparkles, size: 20, color: Colors.blueAccent),
+                                          SizedBox(width: 12),
+                                          Text(
+                                            'Google Speech API Key',
+                                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.white),
+                                          ),
+                                        ],
+                                      ),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            _googleApiKey.isNotEmpty ? 'Active' : 'Configure',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: _googleApiKey.isNotEmpty ? Colors.greenAccent : Colors.white54,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          const Icon(CupertinoIcons.chevron_right, size: 14, color: Colors.white38),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                               Divider(color: Colors.white.withValues(alpha: 0.08)),
                               GestureDetector(

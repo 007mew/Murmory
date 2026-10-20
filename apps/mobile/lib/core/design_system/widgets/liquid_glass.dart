@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 /// Authentic iOS-style Liquid Glass container with hardware-accelerated blur,
 /// specular rim lighting, and subtle translucent gradients.
+/// Set [blur] > 0 only for floating navigation chrome (dock, sheets) to guarantee 120 FPS.
 class LiquidGlass extends StatelessWidget {
   final Widget child;
   final double blur;
@@ -18,8 +19,8 @@ class LiquidGlass extends StatelessWidget {
   const LiquidGlass({
     super.key,
     required this.child,
-    this.blur = 20.0,
-    this.borderRadius = 22.0,
+    this.blur = 0.0,
+    this.borderRadius = 20.0,
     this.padding,
     this.margin,
     this.tintColor,
@@ -51,14 +52,14 @@ class LiquidGlass extends StatelessWidget {
         gradient: gradient,
         border: Border.all(
           color: baseColor.withValues(alpha: borderOpacity),
-          width: 1.2,
+          width: 1.1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
-            blurRadius: 20,
+            color: Colors.black.withValues(alpha: isDark ? 0.30 : 0.06),
+            blurRadius: 18,
             spreadRadius: -2,
-            offset: const Offset(0, 8),
+            offset: const Offset(0, 6),
           ),
         ],
       ),
