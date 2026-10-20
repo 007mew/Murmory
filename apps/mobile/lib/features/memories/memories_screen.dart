@@ -173,7 +173,7 @@ class _MemoriesScreenState extends ConsumerState<MemoriesScreen> {
                       favoritesOnly: _activeFilter == 'Favorites',
                     ),
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
+                      if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                         return const Center(child: CupertinoActivityIndicator(color: Colors.white));
                       }
 

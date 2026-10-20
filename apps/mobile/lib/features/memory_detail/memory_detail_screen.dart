@@ -24,6 +24,10 @@ class MemoryDetailScreen extends ConsumerStatefulWidget {
 
 class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
   late final AudioPlayer _player;
+  late final Stream<Memory?> _memoryStream;
+  late final Stream<List<TagItem>> _tagsStream;
+  late final Stream<List<TranscriptSegment>> _transcriptStream;
+
   bool _isPlaying = false;
   bool _isScrubbing = false;
   double _dragProgress = 0.0;
@@ -35,6 +39,9 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
   void initState() {
     super.initState();
     _player = AudioPlayer();
+    _memoryStream = ref.read(memoriesDaoProvider).watchById(widget.id);
+    _tagsStream = ref.read(tagsServiceProvider).watchTagsForMemory(widget.id);
+    _transcriptStream = ref.read(transcriptDaoProvider).watchSegmentsForMemory(widget.id);
     _initAudio();
   }
 
@@ -342,8 +349,6 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final memoriesDao = ref.watch(memoriesDaoProvider);
-    final transcriptDao = ref.watch(transcriptDaoProvider);
-    final tagsService = ref.watch(tagsServiceProvider);
     final currentMs = _currentPos.inMilliseconds;
 
     return Scaffold(
@@ -371,14 +376,17 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
 
           SafeArea(
             child: StreamBuilder<Memory?>(
-              stream: memoriesDao.watchById(widget.id),
+              stream: _memoryStream,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                   return const Center(child: CupertinoActivityIndicator(color: Colors.white));
                 }
 
                 final memory = snapshot.data;
                 if (memory == null) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CupertinoActivityIndicator(color: Colors.white));
+                  }
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -507,7 +515,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
 
                             // Tags Section
                             StreamBuilder<List<TagItem>>(
-                              stream: tagsService.watchTagsForMemory(memory.id),
+                              stream: _tagsStream,
                               builder: (context, snap) {
                                 final tags = snap.data ?? [];
                                 return Wrap(
@@ -752,7 +760,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
 
                             // Transcript Segments List
                             StreamBuilder<List<TranscriptSegment>>(
-                              stream: transcriptDao.watchSegmentsForMemory(memory.id),
+                              stream: _transcriptStream,
                               builder: (context, snap) {
                                 final segments = snap.data ?? [];
 

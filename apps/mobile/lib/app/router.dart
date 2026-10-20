@@ -13,13 +13,21 @@ import 'package:murmory/features/recording/recording_screen.dart';
 import 'package:murmory/features/search/search_screen.dart';
 import 'package:murmory/features/settings/settings_screen.dart';
 
+final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
+final _shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
+
 final goRouterProvider = Provider<GoRouter>((ref) => _router);
 
 final _router = GoRouter(
+  navigatorKey: _rootNavigatorKey,
   initialLocation: '/',
   routes: [
     ShellRoute(
-      builder: (context, state, child) => _ScaffoldWithNavBar(child: child),
+      navigatorKey: _shellNavigatorKey,
+      builder: (context, state, child) => _ScaffoldWithNavBar(
+        currentPath: state.uri.path,
+        child: child,
+      ),
       routes: [
         GoRoute(
           path: '/',
@@ -28,14 +36,6 @@ final _router = GoRouter(
         GoRoute(
           path: '/memories',
           builder: (context, state) => const MemoriesScreen(),
-          routes: [
-            GoRoute(
-              path: ':id',
-              builder: (context, state) => MemoryDetailScreen(
-                id: state.pathParameters['id']!,
-              ),
-            ),
-          ],
         ),
         GoRoute(
           path: '/ask',
@@ -48,6 +48,17 @@ final _router = GoRouter(
       ],
     ),
     GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/memories/:id',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MemoryDetailScreen(
+          id: state.pathParameters['id']!,
+        ),
+      ),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
       path: '/recording',
       pageBuilder: (context, state) => CustomTransitionPage(
         key: state.pageKey,
@@ -66,6 +77,7 @@ final _router = GoRouter(
       ),
     ),
     GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
       path: '/search',
       pageBuilder: (context, state) => CustomTransitionPage(
         key: state.pageKey,
@@ -78,16 +90,14 @@ final _router = GoRouter(
   ],
 );
 
-class _ScaffoldWithNavBar extends StatefulWidget {
-  const _ScaffoldWithNavBar({required this.child});
+class _ScaffoldWithNavBar extends StatelessWidget {
+  const _ScaffoldWithNavBar({
+    required this.currentPath,
+    required this.child,
+  });
+
+  final String currentPath;
   final Widget child;
-
-  @override
-  State<_ScaffoldWithNavBar> createState() => _ScaffoldWithNavBarState();
-}
-
-class _ScaffoldWithNavBarState extends State<_ScaffoldWithNavBar> {
-  int _currentIndex = 0;
 
   static const List<_NavItem> _items = [
     _NavItem(
@@ -116,18 +126,25 @@ class _ScaffoldWithNavBarState extends State<_ScaffoldWithNavBar> {
     ),
   ];
 
-  void _onDestinationSelected(int index) {
-    if (_currentIndex == index) return;
+  int _currentIndex() {
+    if (currentPath.startsWith('/memories')) return 1;
+    if (currentPath.startsWith('/ask')) return 2;
+    if (currentPath.startsWith('/settings')) return 3;
+    return 0;
+  }
+
+  void _onDestinationSelected(BuildContext context, int index) {
+    if (_currentIndex() == index) return;
     HapticFeedback.selectionClick();
-    setState(() => _currentIndex = index);
     context.go(_items[index].location);
   }
 
   @override
   Widget build(BuildContext context) {
+    final activeIndex = _currentIndex();
     return Scaffold(
       extendBody: true,
-      body: widget.child,
+      body: child,
       bottomNavigationBar: SafeArea(
         child: Container(
           margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -168,11 +185,11 @@ class _ScaffoldWithNavBarState extends State<_ScaffoldWithNavBar> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: List.generate(_items.length, (index) {
                     final item = _items[index];
-                    final isSelected = _currentIndex == index;
+                    final isSelected = activeIndex == index;
 
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => _onDestinationSelected(index),
+                      onTap: () => _onDestinationSelected(context, index),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,
