@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:murmory/core/design_system/tokens.dart';
+import 'package:murmory/core/design_system/widgets/liquid_glass.dart';
 import 'package:murmory/core/providers/core_providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -17,6 +18,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _localOnlyMode = true;
+  bool _liveSttEnabled = true;
+  String _groqApiKey = '';
   int _memoriesCount = 0;
   String _vaultSizeStr = 'Calculating...';
 
@@ -31,6 +34,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _localOnlyMode = prefs.getBool('local_only_mode') ?? true;
+      _liveSttEnabled = prefs.getBool('live_stt_enabled') ?? true;
+      _groqApiKey = prefs.getString('groq_api_key') ?? '';
     });
   }
 
@@ -38,6 +43,63 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('local_only_mode', value);
     setState(() => _localOnlyMode = value);
+  }
+
+  Future<void> _setLiveSttEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('live_stt_enabled', value);
+    setState(() => _liveSttEnabled = value);
+  }
+
+  Future<void> _showApiKeyDialog() async {
+    final controller = TextEditingController(text: _groqApiKey);
+    final updated = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Groq / Whisper API Key'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter your free Groq API key for instant Whisper Large v3 speech transcription of your recordings.',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: controller,
+                placeholder: 'gsk_...',
+                placeholderStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('Clear'),
+            onPressed: () => Navigator.pop(ctx, ''),
+          ),
+          CupertinoDialogAction(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            child: const Text('Save'),
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+          ),
+        ],
+      ),
+    );
+
+    if (updated != null && mounted) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('groq_api_key', updated);
+      setState(() => _groqApiKey = updated);
+    }
   }
 
   Future<void> _calculateStorageStats() async {
@@ -71,23 +133,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _exportData() async {
-    unawaited(showDialog(
+    unawaited(showCupertinoDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Packaging SQLite & M4A Audio Files...', style: TextStyle(fontWeight: FontWeight.w600)),
-                SizedBox(height: 4),
-                Text('Generating SHA-256 integrity manifest', style: TextStyle(fontSize: 12, color: MurmoryColors.textSecondaryLight)),
-              ],
-            ),
+        child: LiquidGlass(
+          blur: 20,
+          borderRadius: 20,
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CupertinoActivityIndicator(radius: 16, color: Colors.white),
+              SizedBox(height: 16),
+              Text(
+                'Packaging SQLite & M4A Audio Files...',
+                style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Generating SHA-256 integrity manifest',
+                style: TextStyle(fontSize: 12, color: Colors.white60),
+              ),
+            ],
           ),
         ),
       ),
@@ -98,50 +166,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final result = await exportService.exportFullVault();
 
       if (mounted) {
-        Navigator.pop(context); // Dismiss progress dialog
+        Navigator.pop(context);
 
         final sizeFormatted = result.totalSizeBytes > 1024 * 1024
             ? '${(result.totalSizeBytes / (1024 * 1024)).toStringAsFixed(2)} MB'
             : '${(result.totalSizeBytes / 1024).toStringAsFixed(1)} KB';
 
-        unawaited(showDialog(
+        unawaited(showCupertinoDialog(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
-                SizedBox(width: 10),
-                Text('Export Complete'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Successfully exported ${result.memoriesCount} memories and ${result.totalFiles} files into an offline ZIP archive.'),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('• Total Archive Size: $sizeFormatted', style: const TextStyle(fontSize: 12)),
-                      Text('• Verified Checksums: ${result.sha256Checksums.length} files (SHA-256)', style: const TextStyle(fontSize: 12)),
-                      const SizedBox(height: 6),
-                      Text('Saved to:\n${result.zipFilePath}', style: const TextStyle(fontSize: 10, color: MurmoryColors.accentLight)),
-                    ],
-                  ),
-                ),
-              ],
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('Export Complete'),
+            content: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Exported ${result.memoriesCount} memories ($sizeFormatted) with verified SHA-256 checksums.\n\nArchive location:\n${result.zipFilePath}',
+                style: const TextStyle(fontSize: 13),
+              ),
             ),
             actions: [
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx),
+              CupertinoDialogAction(
+                isDefaultAction: true,
                 child: const Text('Done'),
+                onPressed: () => Navigator.pop(ctx),
               ),
             ],
           ),
@@ -157,33 +203,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  Future<void> _clearAllData() async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _wipeLocalVault() async {
+    final confirmed = await showCupertinoDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Wipe All Memories?'),
-        content: const Text('This will permanently delete all audio recordings, transcripts, and database records from this device. This action cannot be undone.'),
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Wipe All Local Data?'),
+        content: const Text(
+          'This will permanently delete all audio recordings, transcripts, search indexes, and custom tags from this device. This action cannot be undone.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
+          CupertinoDialogAction(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('Wipe Vault'),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Wipe Everything', style: TextStyle(color: MurmoryColors.recordRed)),
           ),
         ],
       ),
     );
 
     if (confirmed == true && mounted) {
-      final db = ref.read(databaseProvider);
-      await db.customStatement('DELETE FROM transcript_segments');
-      await db.customStatement('DELETE FROM memories');
-      await db.customStatement('DELETE FROM processing_jobs');
-      await db.customStatement('DELETE FROM memory_tags');
-      await _calculateStorageStats();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Vault reset successfully.')),
-        );
+      try {
+        final db = ref.read(databaseProvider);
+        await db.delete(db.transcriptSegments).go();
+        await db.delete(db.memories).go();
+        await db.delete(db.processingJobs).go();
+        await db.delete(db.tags).go();
+
+        final docDir = await getApplicationDocumentsDirectory();
+        if (docDir.existsSync()) {
+          for (final f in docDir.listSync()) {
+            if (f is File && f.path.endsWith('.m4a')) {
+              try {
+                await f.delete();
+              } catch (_) {}
+            }
+          }
+        }
+
+        await _calculateStorageStats();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Vault wiped clean.')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to clear vault: $e')),
+          );
+        }
       }
     }
   }
@@ -191,99 +264,322 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings & Privacy', style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      backgroundColor: Colors.black,
+      body: Stack(
         children: [
-          const Text('STORAGE & DATA VAULT', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: MurmoryColors.textSecondaryLight)),
-          const SizedBox(height: 8),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+          // Ambient background glow
+          Positioned(
+            top: 200,
+            left: -80,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    MurmoryColors.accent.withValues(alpha: 0.16),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
             ),
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.storage_rounded, color: MurmoryColors.accent),
-                  title: const Text('Local Vault Storage'),
-                  subtitle: Text('$_memoriesCount memories recorded • $_vaultSizeStr total on device'),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: MurmoryColors.accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
+          ),
+
+          SafeArea(
+            bottom: false,
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
+                    child: Text(
+                      'Settings',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.0,
+                        color: Colors.white,
+                      ),
                     ),
-                    child: const Text('Encrypted', style: TextStyle(fontSize: 11, color: MurmoryColors.accentLight)),
                   ),
                 ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.archive_outlined, color: Colors.white70),
-                  title: const Text('Export All Data (ZIP)'),
-                  subtitle: const Text('Export SQLite database, transcripts, and original M4A audio files'),
-                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-                  onTap: _exportData,
+
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Vault Storage Card (Liquid Glass)
+                        LiquidGlass(
+                          blur: 20,
+                          borderRadius: 22,
+                          padding: const EdgeInsets.all(18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: MurmoryColors.accent.withValues(alpha: 0.3),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      CupertinoIcons.waveform_circle_fill,
+                                      color: MurmoryColors.accentLight,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Encrypted Local Vault',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      Text(
+                                        '$_memoriesCount memories stored • $_vaultSizeStr on disk',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withValues(alpha: 0.5),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: CupertinoButton(
+                                      color: MurmoryColors.accent,
+                                      borderRadius: BorderRadius.circular(14),
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      onPressed: _exportData,
+                                      child: const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(CupertinoIcons.arrow_down_doc_fill, size: 16, color: Colors.white),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'Export Vault (ZIP)',
+                                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8, bottom: 8),
+                          child: Text(
+                            'TRANSCRIPTION ENGINE',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white60,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        ),
+
+                        // Transcription Settings (Liquid Glass Group)
+                        LiquidGlass(
+                          blur: 18,
+                          borderRadius: 22,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Row(
+                                    children: [
+                                      Icon(CupertinoIcons.mic_fill, size: 20, color: MurmoryColors.accentLight),
+                                      SizedBox(width: 12),
+                                      Text(
+                                        'On-Device Live Speech',
+                                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.white),
+                                      ),
+                                    ],
+                                  ),
+                                  CupertinoSwitch(
+                                    value: _liveSttEnabled,
+                                    activeTrackColor: MurmoryColors.accent,
+                                    onChanged: _setLiveSttEnabled,
+                                  ),
+                                ],
+                              ),
+                              Divider(color: Colors.white.withValues(alpha: 0.08)),
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _showApiKeyDialog,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(CupertinoIcons.lock_fill, size: 20, color: Colors.amberAccent),
+                                          SizedBox(width: 12),
+                                          Text(
+                                            'Groq Whisper Cloud Key',
+                                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.white),
+                                          ),
+                                        ],
+                                      ),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            _groqApiKey.isNotEmpty ? 'Active' : 'Configure',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: _groqApiKey.isNotEmpty ? Colors.greenAccent : Colors.white54,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          const Icon(CupertinoIcons.chevron_right, size: 14, color: Colors.white38),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8, bottom: 8),
+                          child: Text(
+                            'PRIVACY & SECURITY',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white60,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        ),
+
+                        // Privacy Settings
+                        LiquidGlass(
+                          blur: 18,
+                          borderRadius: 22,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Row(
+                                    children: [
+                                      Icon(CupertinoIcons.lock_shield_fill, size: 20, color: Colors.greenAccent),
+                                      SizedBox(width: 12),
+                                      Text(
+                                        'Strict Local Isolation',
+                                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.white),
+                                      ),
+                                    ],
+                                  ),
+                                  CupertinoSwitch(
+                                    value: _localOnlyMode,
+                                    activeTrackColor: MurmoryColors.accent,
+                                    onChanged: _setLocalOnlyMode,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8, bottom: 8),
+                          child: Text(
+                            'DANGER ZONE',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.redAccent,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        ),
+
+                        // Danger Zone Card
+                        LiquidGlass(
+                          blur: 18,
+                          borderRadius: 22,
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Clear Vault Storage',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Permanently erase all recordings, indexed transcripts, and SQLite tables from this phone.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              CupertinoButton(
+                                color: Colors.redAccent.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(12),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                onPressed: _wipeLocalVault,
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(CupertinoIcons.trash_fill, size: 16, color: Colors.redAccent),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Wipe All Local Data',
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.redAccent),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 100),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          const Text('AI & PRIVACY', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: MurmoryColors.textSecondaryLight)),
-          const SizedBox(height: 8),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-            ),
-            child: Column(
-              children: [
-                SwitchListTile(
-                  secondary: const Icon(Icons.cloud_off_rounded, color: MurmoryColors.accent),
-                  title: const Text('Local Only Mode'),
-                  subtitle: const Text('Audio processing and retrieval happen 100% on-device'),
-                  value: _localOnlyMode,
-                  onChanged: (val) {
-                    HapticFeedback.selectionClick();
-                    _setLocalOnlyMode(val);
-                  },
-                ),
-                const Divider(height: 1, indent: 56),
-                const ListTile(
-                  leading: Icon(Icons.security_rounded, color: Colors.white70),
-                  title: Text('Security & Cryptography'),
-                  subtitle: Text('SHA-256 audio validation and private sandboxing active'),
-                  trailing: Icon(Icons.verified_user_rounded, color: Colors.greenAccent, size: 20),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Text('DANGER ZONE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: MurmoryColors.recordRed)),
-          const SizedBox(height: 8),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: MurmoryColors.recordRed.withValues(alpha: 0.3)),
-            ),
-            child: ListTile(
-              leading: const Icon(Icons.delete_forever_rounded, color: MurmoryColors.recordRed),
-              title: const Text('Clear All Memories', style: TextStyle(color: MurmoryColors.recordRed)),
-              subtitle: const Text('Permanently wipe database and audio recordings'),
-              onTap: _clearAllData,
-            ),
-          ),
-          const SizedBox(height: 36),
-          const Center(
-            child: Text(
-              'Murmory v0.5.0\nPrivate Personal Voice Memory & Grounded Retrieval\nLocal-First Vault',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: MurmoryColors.textSecondaryLight, height: 1.5),
-            ),
-          ),
-          const SizedBox(height: 24),
         ],
       ),
     );

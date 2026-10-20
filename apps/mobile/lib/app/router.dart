@@ -1,6 +1,10 @@
+import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:murmory/core/design_system/tokens.dart';
 import 'package:murmory/features/ask/ask_screen.dart';
 import 'package:murmory/features/home/home_screen.dart';
 import 'package:murmory/features/memories/memories_screen.dart';
@@ -88,31 +92,33 @@ class _ScaffoldWithNavBarState extends State<_ScaffoldWithNavBar> {
   static const List<_NavItem> _items = [
     _NavItem(
       label: 'Home',
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home,
+      icon: CupertinoIcons.house,
+      selectedIcon: CupertinoIcons.house_fill,
       location: '/',
     ),
     _NavItem(
       label: 'Memories',
-      icon: Icons.inventory_2_outlined,
-      selectedIcon: Icons.inventory_2,
+      icon: CupertinoIcons.waveform_path,
+      selectedIcon: CupertinoIcons.waveform_path_badge_plus,
       location: '/memories',
     ),
     _NavItem(
       label: 'Ask',
-      icon: Icons.auto_awesome_outlined,
-      selectedIcon: Icons.auto_awesome,
+      icon: CupertinoIcons.sparkles,
+      selectedIcon: CupertinoIcons.sparkles,
       location: '/ask',
     ),
     _NavItem(
       label: 'Settings',
-      icon: Icons.settings_outlined,
-      selectedIcon: Icons.settings,
+      icon: CupertinoIcons.gear_alt,
+      selectedIcon: CupertinoIcons.gear_alt_fill,
       location: '/settings',
     ),
   ];
 
   void _onDestinationSelected(int index) {
+    if (_currentIndex == index) return;
+    HapticFeedback.selectionClick();
     setState(() => _currentIndex = index);
     context.go(_items[index].location);
   }
@@ -120,19 +126,102 @@ class _ScaffoldWithNavBarState extends State<_ScaffoldWithNavBar> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true,
       body: widget.child,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: _items
-            .map(
-              (item) => NavigationDestination(
-                icon: Icon(item.icon),
-                selectedIcon: Icon(item.selectedIcon),
-                label: item.label,
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          height: 66,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(33),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 28,
+                spreadRadius: -4,
+                offset: const Offset(0, 10),
               ),
-            )
-            .toList(),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(33),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(33),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.12),
+                      Colors.white.withValues(alpha: 0.04),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.20),
+                    width: 1.2,
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: List.generate(_items.length, (index) {
+                    final item = _items[index];
+                    final isSelected = _currentIndex == index;
+
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _onDestinationSelected(index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isSelected ? 16 : 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? MurmoryColors.accent.withValues(alpha: 0.35)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                          border: isSelected
+                              ? Border.all(
+                                  color: Colors.white.withValues(alpha: 0.30),
+                                  width: 1.0,
+                                )
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isSelected ? item.selectedIcon : item.icon,
+                              color: isSelected ? Colors.white : Colors.white60,
+                              size: 22,
+                            ),
+                            if (isSelected) ...[
+                              const SizedBox(width: 8),
+                              Text(
+                                item.label,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

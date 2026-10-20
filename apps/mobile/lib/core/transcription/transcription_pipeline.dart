@@ -23,7 +23,12 @@ class TranscriptionPipeline {
         _transcriptDao = transcriptDao,
         _jobsDao = jobsDao;
 
-  Future<void> processMemory(String memoryId, String audioFilePath, int durationMs) async {
+  Future<void> processMemory(
+    String memoryId,
+    String audioFilePath,
+    int durationMs, {
+    String? liveTranscript,
+  }) async {
     final jobId = const Uuid().v4();
     final now = DateTime.now();
 
@@ -44,7 +49,11 @@ class TranscriptionPipeline {
 
     try {
       // 2. Perform transcription
-      final result = await _service.transcribe(audioFilePath, durationMs: durationMs);
+      final result = await _service.transcribe(
+        audioFilePath,
+        durationMs: durationMs,
+        liveTranscript: liveTranscript,
+      );
 
       // 3. Insert segments
       final segmentCompanions = <TranscriptSegmentsCompanion>[];

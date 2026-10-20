@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:murmory/core/design_system/tokens.dart';
+import 'package:murmory/core/design_system/widgets/liquid_glass.dart';
 import 'package:murmory/core/database/database.dart';
 import 'package:murmory/core/database/daos/transcript_dao.dart';
 import 'package:murmory/core/providers/core_providers.dart';
@@ -58,7 +60,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     try {
       final ftsResults = await transcriptDao.searchTranscripts(query);
 
-      // Fetch memory details for each unique memory_id
       final uniqueMemoryIds = ftsResults.map((r) => r.memoryId).toSet();
       final map = <String, Memory>{};
       for (final id in uniqueMemoryIds) {
@@ -79,7 +80,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildSnippetText(String snippet) {
-    // Snippet from SQLite FTS contains <b>matched</b> tags
     final spans = <TextSpan>[];
     final regex = RegExp(r'<b>(.*?)<\/b>');
     int lastIndex = 0;
@@ -88,7 +88,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (match.start > lastIndex) {
         spans.add(TextSpan(
           text: snippet.substring(lastIndex, match.start),
-          style: const TextStyle(color: MurmoryColors.textSecondaryLight, fontSize: 13),
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
         ));
       }
       spans.add(TextSpan(
@@ -105,12 +105,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (lastIndex < snippet.length) {
       spans.add(TextSpan(
         text: snippet.substring(lastIndex),
-        style: const TextStyle(color: MurmoryColors.textSecondaryLight, fontSize: 13),
+        style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
       ));
-    }
-
-    if (spans.isEmpty) {
-      return Text(snippet, style: const TextStyle(color: MurmoryColors.textSecondaryLight, fontSize: 13));
     }
 
     return RichText(text: TextSpan(children: spans));
@@ -121,208 +117,276 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final tagsService = ref.watch(tagsServiceProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: TextField(
-          controller: _controller,
-          autofocus: true,
-          style: const TextStyle(fontSize: 16),
-          decoration: InputDecoration(
-            hintText: 'Search spoken words, topics...',
-            hintStyle: TextStyle(color: MurmoryColors.textSecondaryLight.withValues(alpha: 0.6)),
-            border: InputBorder.none,
-            suffixIcon: _controller.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear_rounded, size: 20),
-                    onPressed: () {
-                      _controller.clear();
-                      _onSearchChanged('');
-                      setState(() {});
-                    },
-                  )
-                : null,
-          ),
-          onChanged: (val) {
-            setState(() {});
-            _onSearchChanged(val);
-          },
-        ),
-      ),
-      body: Column(
+      backgroundColor: Colors.black,
+      body: Stack(
         children: [
-          // Quick tag filter row
-          StreamBuilder<List<TagItem>>(
-            stream: tagsService.watchAllTags(),
-            builder: (context, snap) {
-              final tags = snap.data ?? [];
-              return SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  children: [
-                    ChoiceChip(
-                      label: const Text('All'),
-                      selected: _selectedTag == 'All',
-                      onSelected: (sel) {
-                        setState(() => _selectedTag = 'All');
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    ...tags.map((t) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(t.name),
-                          selected: _selectedTag == t.name,
-                          onSelected: (sel) {
-                            setState(() => _selectedTag = sel ? t.name : 'All');
-                            _controller.text = t.name.replaceAll('#', '');
-                            _performSearch(_controller.text);
-                          },
-                        ),
-                      );
-                    }),
+          // Ambient background glow
+          Positioned(
+            top: -40,
+            right: -60,
+            child: Container(
+              width: 260,
+              height: 260,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    MurmoryColors.accent.withValues(alpha: 0.20),
+                    Colors.transparent,
                   ],
                 ),
-              );
-            },
+              ),
+            ),
           ),
-          const Divider(height: 1),
 
-          // Search Results
-          Expanded(
-            child: _isSearching
-                ? const Center(child: CircularProgressIndicator())
-                : _controller.text.trim().isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search_rounded,
-                              size: 60,
-                              color: MurmoryColors.textSecondaryLight.withValues(alpha: 0.3),
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Search Your Voice Vault',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-                            ),
-                            const SizedBox(height: 6),
-                            const Text(
-                              'Instant SQLite FTS5 search across all transcripts',
-                              style: TextStyle(fontSize: 12, color: MurmoryColors.textSecondaryLight),
-                            ),
-                          ],
+          SafeArea(
+            child: Column(
+              children: [
+                // iOS-Style Search Bar Top Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      LiquidGlass(
+                        blur: 16,
+                        borderRadius: 20,
+                        padding: EdgeInsets.zero,
+                        onTap: () => context.pop(),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          alignment: Alignment.center,
+                          child: const Icon(CupertinoIcons.chevron_back, color: Colors.white, size: 22),
                         ),
-                      )
-                    : _results.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.search_off_rounded,
-                                  size: 54,
-                                  color: MurmoryColors.textSecondaryLight.withValues(alpha: 0.3),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: LiquidGlass(
+                          blur: 20,
+                          borderRadius: 22,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                          child: Row(
+                            children: [
+                              const Icon(CupertinoIcons.search, color: Colors.white60, size: 18),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: CupertinoTextField(
+                                  controller: _controller,
+                                  autofocus: true,
+                                  placeholder: 'Search voice memories...',
+                                  placeholderStyle: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                    fontSize: 15,
+                                  ),
+                                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                                  decoration: null,
+                                  onChanged: _onSearchChanged,
                                 ),
-                                const SizedBox(height: 14),
-                                Text(
-                                  'No exact matches for "${_controller.text}"',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              if (_controller.text.isNotEmpty)
+                                GestureDetector(
+                                  onTap: () {
+                                    _controller.clear();
+                                    _onSearchChanged('');
+                                  },
+                                  child: const Icon(
+                                    CupertinoIcons.clear_thick_circled,
+                                    size: 16,
+                                    color: Colors.white54,
+                                  ),
                                 ),
-                                const SizedBox(height: 6),
-                                const Text(
-                                  'Try searching for a different word or topic',
-                                  style: TextStyle(fontSize: 12, color: MurmoryColors.textSecondaryLight),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _results.length,
-                            separatorBuilder: (ctx, i) => const SizedBox(height: 10),
-                            itemBuilder: (ctx, i) {
-                              final item = _results[i];
-                              final memory = _memoryMap[item.memoryId];
-                              final title = memory?.title ?? 'Voice Note';
-                              final dateStr = memory != null
-                                  ? DateFormat('MMM d, h:mm a').format(memory.createdAt)
-                                  : '';
-                              final durSec = memory != null ? (memory.durationMs / 1000).round() : 0;
-                              final mins = (durSec ~/ 60).toString().padLeft(2, '0');
-                              final secs = (durSec % 60).toString().padLeft(2, '0');
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
-                              return Card(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+                // Tags Filter Bar
+                StreamBuilder<List<TagItem>>(
+                  stream: tagsService.watchAllTags(),
+                  builder: (context, snap) {
+                    final tags = snap.data ?? [];
+                    if (tags.isEmpty) return const SizedBox.shrink();
+
+                    final filterOptions = ['All', ...tags.map((t) => t.name)];
+
+                    return Container(
+                      height: 40,
+                      margin: const EdgeInsets.only(top: 8),
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: filterOptions.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (ctx, i) {
+                          final item = filterOptions[i];
+                          final isSelected = _selectedTag == item;
+
+                          return GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              setState(() => _selectedTag = item);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? MurmoryColors.accent.withValues(alpha: 0.35)
+                                    : Colors.white.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? Colors.white.withValues(alpha: 0.3)
+                                      : Colors.white.withValues(alpha: 0.1),
+                                  width: 1.0,
                                 ),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Text(
+                                item,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                  color: isSelected ? Colors.white : Colors.white70,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 8),
+
+                // Search Results
+                Expanded(
+                  child: _isSearching
+                      ? const Center(child: CupertinoActivityIndicator(color: Colors.white))
+                      : _results.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 32),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    LiquidGlass(
+                                      blur: 16,
+                                      borderRadius: 36,
+                                      padding: const EdgeInsets.all(24),
+                                      child: Icon(
+                                        CupertinoIcons.search,
+                                        size: 48,
+                                        color: Colors.white.withValues(alpha: 0.35),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _controller.text.isEmpty
+                                          ? 'Search any word or idea'
+                                          : 'No memories matched "${_controller.text}"',
+                                      style: const TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                        letterSpacing: -0.3,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _controller.text.isEmpty
+                                          ? 'Instant local FTS5 search across all transcripts and titles.'
+                                          : 'Try searching for related keywords or topics.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.white.withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                              itemCount: _results.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              itemBuilder: (ctx, i) {
+                                final res = _results[i];
+                                final memory = _memoryMap[res.memoryId];
+                                final durationSec = memory != null ? (memory.durationMs / 1000).round() : 0;
+                                final minStr = (durationSec ~/ 60).toString().padLeft(2, '0');
+                                final secStr = (durationSec % 60).toString().padLeft(2, '0');
+                                final dateStr = memory != null
+                                    ? DateFormat('MMM d, h:mm a').format(memory.createdAt)
+                                    : '';
+
+                                return LiquidGlass(
+                                  blur: 18,
+                                  borderRadius: 18,
+                                  padding: const EdgeInsets.all(14),
                                   onTap: () {
                                     HapticFeedback.lightImpact();
-                                    context.push('/memories/${item.memoryId}');
+                                    context.push('/memories/${res.memoryId}');
                                   },
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(14),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                title,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 15,
-                                                ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              memory?.title ?? 'Voice Memory',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 15,
+                                                color: Colors.white,
                                               ),
                                             ),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white.withValues(alpha: 0.08),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                '$mins:$secs',
-                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: MurmoryColors.accent.withValues(alpha: 0.25),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              '$minStr:$secStr',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: MurmoryColors.accentLight,
                                               ),
                                             ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      _buildSnippetText(res.snippet),
+                                      if (dateStr.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
                                         Text(
                                           dateStr,
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: MurmoryColors.textSecondaryLight.withValues(alpha: 0.6),
+                                            color: Colors.white.withValues(alpha: 0.4),
                                           ),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.all(10),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withValues(alpha: 0.25),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: _buildSnippetText(item.snippet),
                                         ),
                                       ],
-                                    ),
+                                    ],
                                   ),
-                                ),
-                              );
-                            },
-                          ),
+                                );
+                              },
+                            ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

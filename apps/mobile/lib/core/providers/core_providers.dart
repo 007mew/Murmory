@@ -51,7 +51,7 @@ final audioPlayerServiceProvider = Provider<AudioPlayerService>((ref) {
 });
 
 final transcriptionServiceProvider = Provider<TranscriptionService>((ref) {
-  return LocalOfflineTranscriptionService();
+  return HybridTranscriptionService();
 });
 
 final transcriptionPipelineProvider = Provider<TranscriptionPipeline>((ref) {
