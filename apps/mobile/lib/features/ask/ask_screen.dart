@@ -194,11 +194,15 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                     children: [
                       const Icon(CupertinoIcons.lock_shield_fill, size: 13, color: Colors.greenAccent),
                       const SizedBox(width: 6),
-                      Text(
-                        'Answers strictly synthesized against your private voice vault',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.5),
+                      Expanded(
+                        child: Text(
+                          'Answers strictly synthesized against your private voice vault',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
