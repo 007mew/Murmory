@@ -18,6 +18,11 @@ on:
           - release
           - debug
 
+# Auto-cancel any previous stuck or in-progress run on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -25,6 +30,7 @@ jobs:
   build-apk:
     name: Build Android APK (${{ github.event.inputs.build_type || 'release' }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout Code
@@ -51,10 +57,6 @@ jobs:
       - name: Install Dependencies
         working-directory: apps/mobile
         run: flutter pub get
-
-      - name: Run Build Runner (Drift & CodeGen)
-        working-directory: apps/mobile
-        run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Build Android APK
         working-directory: apps/mobile
