@@ -1,0 +1,93 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Mode (release or debug)'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Android APK (${{ github.event.inputs.build_type || 'release' }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Verify Environment
+        run: |
+          flutter --version
+          java -version
+
+      - name: Install Dependencies
+        working-directory: apps/mobile
+        run: flutter pub get
+
+      - name: Run Build Runner (Drift & CodeGen)
+        working-directory: apps/mobile
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Android APK
+        working-directory: apps/mobile
+        run: |
+          BUILD_MODE="${{ github.event.inputs.build_type || 'release' }}"
+          echo "Building Murmory APK in $BUILD_MODE mode..."
+          flutter build apk --$BUILD_MODE
+
+      - name: Prepare APK Artifacts
+        working-directory: apps/mobile
+        run: |
+          BUILD_MODE="${{ github.event.inputs.build_type || 'release' }}"
+          mkdir -p release_artifacts
+          cd build/app/outputs/flutter-apk
+          for f in app-*.apk; do
+            [ -f "$f" ] || continue
+            cp "$f" "../../../release_artifacts/${f/app-/murmory-}"
+            cp "$f" "../../../release_artifacts/"
+          done
+          ls -lah ../../../release_artifacts
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: murmory-apk-${{ github.event.inputs.build_type || 'release' }}
+          path: apps/mobile/release_artifacts/*.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release (on Git Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/mobile/release_artifacts/*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

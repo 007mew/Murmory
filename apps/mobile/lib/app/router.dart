@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -99,44 +98,11 @@ class _ScaffoldWithNavBar extends StatelessWidget {
   final String currentPath;
   final Widget child;
 
-  static const List<_NavItem> _items = [
-    _NavItem(
-      label: 'Home',
-      icon: CupertinoIcons.house,
-      selectedIcon: CupertinoIcons.house_fill,
-      location: '/',
-    ),
-    _NavItem(
-      label: 'Memories',
-      icon: CupertinoIcons.waveform_path,
-      selectedIcon: CupertinoIcons.waveform_path_badge_plus,
-      location: '/memories',
-    ),
-    _NavItem(
-      label: 'Ask',
-      icon: CupertinoIcons.sparkles,
-      selectedIcon: CupertinoIcons.sparkles,
-      location: '/ask',
-    ),
-    _NavItem(
-      label: 'Settings',
-      icon: CupertinoIcons.gear_alt,
-      selectedIcon: CupertinoIcons.gear_alt_fill,
-      location: '/settings',
-    ),
-  ];
-
   int _currentIndex() {
     if (currentPath.startsWith('/memories')) return 1;
-    if (currentPath.startsWith('/ask')) return 2;
-    if (currentPath.startsWith('/settings')) return 3;
+    if (currentPath.startsWith('/ask')) return 3;
+    if (currentPath.startsWith('/settings')) return 4;
     return 0;
-  }
-
-  void _onDestinationSelected(BuildContext context, int index) {
-    if (_currentIndex() == index) return;
-    HapticFeedback.selectionClick();
-    context.go(_items[index].location);
   }
 
   @override
@@ -147,113 +113,132 @@ class _ScaffoldWithNavBar extends StatelessWidget {
       body: child,
       bottomNavigationBar: SafeArea(
         child: Container(
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-          height: 66,
+          margin: const EdgeInsets.fromLTRB(44, 0, 44, 18),
+          height: 62,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(33),
-            boxShadow: [
+            color: MurmoryColors.dockBackground,
+            borderRadius: BorderRadius.circular(31),
+            boxShadow: const [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 28,
-                spreadRadius: -4,
-                offset: const Offset(0, 10),
+                color: Color(0x35000000),
+                blurRadius: 24,
+                spreadRadius: -2,
+                offset: Offset(0, 10),
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(33),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(33),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withValues(alpha: 0.12),
-                      Colors.white.withValues(alpha: 0.04),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // 1. Home
+              _buildDockButton(
+                context: context,
+                isSelected: activeIndex == 0,
+                icon: CupertinoIcons.house_alt_fill,
+                unselectedIcon: CupertinoIcons.house_alt,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  context.go('/');
+                },
+              ),
+
+              // 2. Notes / Memories List
+              _buildDockButton(
+                context: context,
+                isSelected: activeIndex == 1,
+                icon: CupertinoIcons.doc_text_fill,
+                unselectedIcon: CupertinoIcons.doc_text,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  context.go('/memories');
+                },
+              ),
+
+              // 3. Center (+) Action Pod (Vibrant Blue Circle)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  context.push('/recording');
+                },
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  decoration: const BoxDecoration(
+                    color: MurmoryColors.primaryBlue,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x4D3B82F6),
+                        blurRadius: 10,
+                        offset: Offset(0, 3),
+                      ),
                     ],
                   ),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.20),
-                    width: 1.2,
+                  child: const Icon(
+                    CupertinoIcons.plus,
+                    color: Colors.white,
+                    size: 24,
                   ),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: List.generate(_items.length, (index) {
-                    final item = _items[index];
-                    final isSelected = activeIndex == index;
-
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _onDestinationSelected(context, index),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isSelected ? 16 : 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? MurmoryColors.accent.withValues(alpha: 0.35)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(20),
-                          border: isSelected
-                              ? Border.all(
-                                  color: Colors.white.withValues(alpha: 0.30),
-                                  width: 1.0,
-                                )
-                              : null,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              isSelected ? item.selectedIcon : item.icon,
-                              color: isSelected ? Colors.white : Colors.white60,
-                              size: 22,
-                            ),
-                            if (isSelected) ...[
-                              const SizedBox(width: 8),
-                              Text(
-                                item.label,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.2,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                ),
               ),
-            ),
+
+              // 4. Tasks / Ask Murmory
+              _buildDockButton(
+                context: context,
+                isSelected: activeIndex == 3,
+                icon: CupertinoIcons.checkmark_seal_fill,
+                unselectedIcon: CupertinoIcons.checkmark_circle,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  context.go('/ask');
+                },
+              ),
+
+              // 5. Settings / More
+              _buildDockButton(
+                context: context,
+                isSelected: activeIndex == 4,
+                icon: CupertinoIcons.gear_alt_fill,
+                unselectedIcon: CupertinoIcons.gear_alt,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  context.go('/settings');
+                },
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-}
 
-class _NavItem {
-  const _NavItem({
-    required this.label,
-    required this.icon,
-    required this.selectedIcon,
-    required this.location,
-  });
-
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
-  final String location;
+  Widget _buildDockButton({
+    required BuildContext context,
+    required bool isSelected,
+    required IconData icon,
+    required IconData unselectedIcon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: isSelected ? MurmoryColors.primaryBlue : Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          isSelected ? icon : unselectedIcon,
+          color: isSelected ? Colors.white : Colors.white60,
+          size: 21,
+        ),
+      ),
+    );
+  }
 }

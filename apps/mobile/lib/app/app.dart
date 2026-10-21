@@ -14,7 +14,7 @@ class MurmoryApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: MurmoryTheme.light(),
       darkTheme: MurmoryTheme.dark(),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       routerConfig: router,
     );
   }

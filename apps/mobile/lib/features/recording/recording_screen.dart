@@ -10,7 +10,6 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 import 'package:murmory/core/audio/models.dart';
 import 'package:murmory/core/design_system/tokens.dart';
-import 'package:murmory/core/design_system/widgets/liquid_glass.dart';
 import 'package:murmory/core/providers/core_providers.dart';
 import 'package:murmory/core/database/database.dart';
 
@@ -25,11 +24,12 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
   int _elapsedSeconds = 0;
   Timer? _timer;
   String? _tempFilePath;
-  final List<double> _waveformLevels = List.filled(32, 0.05, growable: true);
+  final List<double> _waveformLevels = List.filled(36, 0.08, growable: true);
   StreamSubscription<AudioLevel>? _levelSub;
   final stt.SpeechToText _speech = stt.SpeechToText();
   String _liveTranscript = '';
   bool _speechAvailable = false;
+  bool _isPaused = false;
 
   @override
   void initState() {
@@ -77,9 +77,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
             ),
           ));
         }
-      } catch (_) {
-        // SpeechRecognizer might not support concurrent mic on older hardware
-      }
+      } catch (_) {}
 
       // 2. Start hardware audio capture
       final docDir = await getApplicationDocumentsDirectory();
@@ -87,7 +85,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       await recorder.start(_tempFilePath!);
 
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (mounted) {
+        if (mounted && !_isPaused) {
           setState(() {
             _elapsedSeconds++;
           });
@@ -95,7 +93,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       });
 
       _levelSub = recorder.levelStream.listen((lvl) {
-        if (mounted) {
+        if (mounted && !_isPaused) {
           setState(() {
             _waveformLevels.removeAt(0);
             _waveformLevels.add(lvl.amplitude.clamp(0.08, 1.0));
@@ -112,8 +110,20 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
     }
   }
 
-  Future<void> _stopAndSave() async {
+  Future<void> _togglePauseResume() async {
     await HapticFeedback.mediumImpact();
+    final recorder = ref.read(audioRecorderProvider);
+    if (_isPaused) {
+      await recorder.resume();
+      setState(() => _isPaused = false);
+    } else {
+      await recorder.pause();
+      setState(() => _isPaused = true);
+    }
+  }
+
+  Future<void> _stopAndSave() async {
+    await HapticFeedback.heavyImpact();
     final recorder = ref.read(audioRecorderProvider);
     final memoriesDao = ref.read(memoriesDaoProvider);
 
@@ -140,13 +150,12 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         ),
       );
 
-      // Trigger transcription pipeline in background with live captured words
+      // Trigger automatic transcription in background
       final pipeline = ref.read(transcriptionPipelineProvider);
       unawaited(pipeline.processMemory(
         memoryId,
         recordedAudio.path,
         recordedAudio.durationMs,
-        liveTranscript: _liveTranscript.trim().isNotEmpty ? _liveTranscript : null,
       ));
 
       if (mounted) {
@@ -156,7 +165,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to persist recording: $e')),
+          SnackBar(content: Text('Save error: $e')),
         );
         context.pop();
       }
@@ -164,23 +173,22 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
   }
 
   Future<void> _cancelRecording() async {
-    await HapticFeedback.lightImpact();
+    await HapticFeedback.mediumImpact();
     final recorder = ref.read(audioRecorderProvider);
     _timer?.cancel();
     await _levelSub?.cancel();
     if (_speech.isListening) {
-      await _speech.cancel();
+      await _speech.stop();
     }
     await recorder.cancel();
-    if (mounted) {
-      context.pop();
-    }
+    if (mounted) context.pop();
   }
 
-  String _formatDuration(int totalSeconds) {
-    final mins = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-    final secs = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$mins:$secs';
+  String _formatDuration(int seconds) {
+    final hrs = (seconds ~/ 3600).toString().padLeft(2, '0');
+    final mins = ((seconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final secs = (seconds % 60).toString().padLeft(2, '0');
+    return '$hrs:$mins:$secs';
   }
 
   @override
@@ -188,311 +196,243 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
     _timer?.cancel();
     _levelSub?.cancel();
     if (_speech.isListening) {
-      _speech.cancel();
+      _speech.stop();
     }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final recorder = ref.watch(audioRecorderProvider);
-
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // Ambient liquid glow orbs
-          Positioned(
-            top: -60,
-            right: -60,
-            child: Container(
-              width: 240,
-              height: 240,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    MurmoryColors.accent.withValues(alpha: 0.28),
-                    Colors.transparent,
-                  ],
+      backgroundColor: MurmoryColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 1. Top Bar (Screen 3: Back button, "Audio", Power/Cancel)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildCircleButton(
+                    icon: CupertinoIcons.chevron_back,
+                    onTap: () => unawaited(_cancelRecording()),
+                  ),
+                  const Text(
+                    'Audio',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: MurmoryColors.textPrimary,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                  _buildCircleButton(
+                    icon: CupertinoIcons.power,
+                    onTap: () => unawaited(_cancelRecording()),
+                  ),
+                ],
+              ),
+            ),
+
+            // 2. Centered Live Spoken Text Display
+            Expanded(
+              flex: 4,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+                child: Center(
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _liveTranscript.isNotEmpty
+                          ? _liveTranscript
+                          : 'Today we discussed campaign performance, content calendar, and upcoming tasks for the next sprint. The main focus will be improving conversion rate and optimizing landing pages...',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        height: 1.6,
+                        fontWeight: FontWeight.w400,
+                        color: _liveTranscript.isNotEmpty
+                            ? MurmoryColors.textPrimary
+                            : MurmoryColors.textSecondary.withValues(alpha: 0.7),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            bottom: 120,
-            left: -80,
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF6366F1).withValues(alpha: 0.22),
-                    Colors.transparent,
-                  ],
+
+            // 3. Centered Royal Blue Waveform Bars
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: SizedBox(
+                height: 80,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: List.generate(_waveformLevels.length, (i) {
+                    final lvl = _waveformLevels[i];
+                    final isCenter = (i - _waveformLevels.length / 2).abs() < 12;
+
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 60),
+                      margin: const EdgeInsets.symmetric(horizontal: 2.2),
+                      width: 4.0,
+                      height: (80 * lvl).clamp(8.0, 78.0),
+                      decoration: BoxDecoration(
+                        color: isCenter
+                            ? MurmoryColors.primaryBlue
+                            : const Color(0xFFCBD5E1).withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    );
+                  }),
                 ),
               ),
             ),
-          ),
 
-          SafeArea(
-            child: Column(
-              children: [
-                // iOS-style top navigation bar
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
+            const Spacer(flex: 1),
+
+            // 4. Bottom Audio Control Pod
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(32, 28, 32, 32),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(40)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x12000000),
+                    blurRadius: 24,
+                    offset: Offset(0, -6),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Row of Controls: Checkmark (Finish), Blue Mic Button, 'X' (Cancel)
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      IconButton(
-                        icon: const Icon(CupertinoIcons.xmark_circle_fill, color: Colors.white60, size: 30),
-                        tooltip: 'Cancel',
-                        onPressed: () => unawaited(_cancelRecording()),
-                      ),
-                      const Text(
-                        'Voice Capture',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.4,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 48), // balance leading
-                    ],
-                  ),
-                ),
-
-                const Spacer(flex: 1),
-
-                // Pulsing Recording Status Pill (iOS style)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: MurmoryColors.recordRed.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                      color: MurmoryColors.recordRed.withValues(alpha: 0.35),
-                      width: 1.1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: MurmoryColors.recordRed,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'RECORDING',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: MurmoryColors.recordRed,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Timer Display (iOS Monospace)
-                Text(
-                  _formatDuration(_elapsedSeconds),
-                  style: const TextStyle(
-                    fontSize: 70,
-                    fontWeight: FontWeight.w200,
-                    color: Colors.white,
-                    letterSpacing: -1.0,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // Liquid Glass Waveform Box
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: LiquidGlass(
-                    blur: 16,
-                    borderRadius: 20,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                    child: SizedBox(
-                      height: 64,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: _waveformLevels.map((lvl) {
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 60),
-                            margin: const EdgeInsets.symmetric(horizontal: 2.2),
-                            width: 3.5,
-                            height: (64 * lvl).clamp(5.0, 64.0),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [Color(0xFFA78BFA), Color(0xFF6366F1)],
-                              ),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Live Real-Time Speech Recognition Pill
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: LiquidGlass(
-                    blur: 14,
-                    borderRadius: 18,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(
-                          CupertinoIcons.waveform_path_badge_plus,
-                          color: MurmoryColors.accentLight,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _liveTranscript.isNotEmpty
-                                ? _liveTranscript
-                                : (_speechAvailable
-                                    ? 'Listening for speech...'
-                                    : 'Recording local audio stream...'),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: _liveTranscript.isNotEmpty
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.5),
-                              fontWeight: _liveTranscript.isNotEmpty
-                                  ? FontWeight.w500
-                                  : FontWeight.w400,
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const Spacer(flex: 2),
-
-                // iOS-Style Control Dock
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 28),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Trash / Cancel
-                      LiquidGlass(
-                        blur: 12,
-                        borderRadius: 30,
-                        padding: EdgeInsets.zero,
-                        onTap: () => unawaited(_cancelRecording()),
+                      // Finish / Save (Checkmark)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _stopAndSave,
                         child: Container(
-                          width: 58,
-                          height: 58,
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: MurmoryColors.softGrey,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: MurmoryColors.cardBorder),
+                          ),
                           alignment: Alignment.center,
                           child: const Icon(
-                            CupertinoIcons.trash,
-                            color: Colors.white70,
-                            size: 24,
+                            CupertinoIcons.checkmark,
+                            color: MurmoryColors.textPrimary,
+                            size: 20,
                           ),
                         ),
                       ),
 
-                      // Stop & Save Checkmark (Main iOS Liquid Button)
-                      GestureDetector(
-                        onTap: () => unawaited(_stopAndSave()),
-                        child: Container(
-                          width: 84,
-                          height: 84,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
-                            ),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.35),
-                              width: 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF6366F1).withValues(alpha: 0.55),
-                                blurRadius: 28,
-                                spreadRadius: 3,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            CupertinoIcons.checkmark_alt,
-                            color: Colors.white,
-                            size: 44,
-                          ),
-                        ),
-                      ),
-
-                      // Pause / Resume StreamBuilder
-                      StreamBuilder<RecordingState>(
-                        stream: recorder.stateStream,
-                        builder: (context, snap) {
-                          final isPaused = snap.data?.status == RecordingStatus.paused;
-                          return LiquidGlass(
-                            blur: 12,
-                            borderRadius: 30,
-                            padding: EdgeInsets.zero,
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              if (isPaused) {
-                                unawaited(recorder.resume());
-                              } else {
-                                unawaited(recorder.pause());
-                              }
-                            },
+                      // Center Large Vibrant Royal Blue Mic Button
+                      Column(
+                        children: [
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _togglePauseResume,
                             child: Container(
-                              width: 58,
-                              height: 58,
+                              width: 76,
+                              height: 76,
+                              decoration: const BoxDecoration(
+                                color: MurmoryColors.primaryBlue,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Color(0x553B82F6),
+                                    blurRadius: 20,
+                                    spreadRadius: 2,
+                                    offset: Offset(0, 6),
+                                  ),
+                                ],
+                              ),
                               alignment: Alignment.center,
                               child: Icon(
-                                isPaused ? CupertinoIcons.play_fill : CupertinoIcons.pause_fill,
+                                _isPaused ? CupertinoIcons.play_fill : CupertinoIcons.mic_fill,
                                 color: Colors.white,
-                                size: 24,
+                                size: 32,
                               ),
                             ),
-                          );
-                        },
+                          ),
+                          const SizedBox(height: 12),
+                          // Timer: 00:00:26
+                          Text(
+                            _formatDuration(_elapsedSeconds),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: MurmoryColors.textPrimary,
+                              letterSpacing: 0.5,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Cancel / Discard ('X')
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => unawaited(_cancelRecording()),
+                        child: Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: MurmoryColors.softGrey,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: MurmoryColors.cardBorder),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            CupertinoIcons.xmark,
+                            color: MurmoryColors.iconCoral,
+                            size: 20,
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCircleButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: MurmoryColors.cardBorder, width: 1.0),
+          boxShadow: MurmoryColors.softShadow,
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          icon,
+          color: MurmoryColors.textPrimary,
+          size: 19,
+        ),
       ),
     );
   }

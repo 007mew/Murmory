@@ -2,23 +2,89 @@ import 'package:flutter/material.dart';
 
 class MurmoryColors {
   MurmoryColors._();
-  static const Color accent = Color(0xFF6C63FF);
-  static const Color accentLight = Color(0xFF9C94FF);
-  static const Color accentDark = Color(0xFF4A42DD);
-  static const Color surface = Color(0xFFF8F8FC);
-  static const Color surfaceDark = Color(0xFF1A1A2E);
-  static const Color backgroundDark = Color(0xFF0F0F1A);
-  static const Color backgroundLight = Color(0xFFF2F2FA);
-  static const Color error = Color(0xFFE53935);
-  static const Color success = Color(0xFF43A047);
-  static const Color warning = Color(0xFFFB8C00);
-  static const Color textPrimaryLight = Color(0xFF1A1A2E);
-  static const Color textSecondaryLight = Color(0xFF6B6B8D);
-  static const Color textPrimaryDark = Color(0xFFF0F0FF);
-  static const Color textSecondaryDark = Color(0xFFA0A0C0);
-  static const Color recordRed = Color(0xFFE53935);
-  static const Color dividerLight = Color(0xFFE0E0F0);
-  static const Color dividerDark = Color(0xFF2A2A3E);
+
+  // Primary Aesthetic Colors (from UI Reference)
+  static const Color primaryBlue = Color(0xFF3B82F6);
+  static const Color primaryBlueDark = Color(0xFF2563EB);
+  static const Color primaryBlueLight = Color(0xFF60A5FA);
+
+  // Background & Surfaces
+  static const Color background = Color(0xFFF6F8FB);
+  static const Color cardSurface = Color(0xFFFFFFFF);
+  static const Color cardBorder = Color(0xFFEEF2F6);
+  static const Color softGrey = Color(0xFFF1F5F9);
+
+  // Typography
+  static const Color textPrimary = Color(0xFF0F172A);
+  static const Color textSecondary = Color(0xFF64748B);
+  static const Color textMuted = Color(0xFF94A3B8);
+  static const Color textTertiary = Color(0xFF94A3B8);
+
+  // Dark Floating Capsule Dock
+  static const Color dockBackground = Color(0xFF111827);
+
+  // Pastel & Accent Badges for AI Assist & Tags
+  static const Color pastelGreen = Color(0xFFECFDF5);
+  static const Color iconGreen = Color(0xFF10B981);
+
+  static const Color pastelPurple = Color(0xFFF5F3FF);
+  static const Color iconPurple = Color(0xFF8B5CF6);
+
+  static const Color pastelCoral = Color(0xFFFEF2F2);
+  static const Color iconCoral = Color(0xFFEF4444);
+
+  static const Color pastelPink = Color(0xFFFDF2F8);
+  static const Color iconPink = Color(0xFFEC4899);
+
+  static const Color pastelBlue = Color(0xFFEFF6FF);
+
+  // Backward compatibility aliases
+  static const Color accent = primaryBlue;
+  static const Color accentLight = primaryBlueLight;
+  static const Color accentDark = primaryBlueDark;
+  static const Color surface = cardSurface;
+  static const Color surfaceDark = Color(0xFF1E293B);
+  static const Color backgroundDark = Color(0xFF0F172A);
+  static const Color backgroundLight = background;
+  static const Color error = iconCoral;
+  static const Color success = iconGreen;
+  static const Color warning = Color(0xFFF59E0B);
+  static const Color textPrimaryLight = textPrimary;
+  static const Color textSecondaryLight = textSecondary;
+  static const Color textPrimaryDark = Color(0xFFF8FAFC);
+  static const Color textSecondaryDark = Color(0xFF94A3B8);
+  static const Color recordRed = iconCoral;
+  static const Color dividerLight = Color(0xFFE2E8F0);
+  static const Color dividerDark = Color(0xFF334155);
+
+  // Shadows
+  static const List<BoxShadow> softShadow = [
+    BoxShadow(
+      color: Color(0x0A000000),
+      blurRadius: 16,
+      spreadRadius: 0,
+      offset: Offset(0, 4),
+    ),
+  ];
+  static const List<BoxShadow> cardShadow = softShadow;
+
+  static const List<BoxShadow> dockShadow = [
+    BoxShadow(
+      color: Color(0x2E000000),
+      blurRadius: 24,
+      spreadRadius: -2,
+      offset: Offset(0, 10),
+    ),
+  ];
+
+  static const List<BoxShadow> blueGlow = [
+    BoxShadow(
+      color: Color(0x403B82F6),
+      blurRadius: 18,
+      spreadRadius: 2,
+      offset: Offset(0, 6),
+    ),
+  ];
 }
 
 class MurmorySpacing {
@@ -35,8 +101,8 @@ class MurmoryRadius {
   MurmoryRadius._();
   static const double sm = 8.0;
   static const double md = 12.0;
-  static const double lg = 16.0;
-  static const double xl = 24.0;
+  static const double lg = 18.0;
+  static const double xl = 22.0;
   static const double full = 999.0;
 }
 

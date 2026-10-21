@@ -6,11 +6,13 @@ class MurmoryTheme {
 
   static ThemeData light() {
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: MurmoryColors.accent,
+      seedColor: MurmoryColors.primaryBlue,
       brightness: Brightness.light,
-      surface: MurmoryColors.surface,
+      surface: MurmoryColors.cardSurface,
     );
-    return _buildTheme(colorScheme);
+    return _buildTheme(colorScheme).copyWith(
+      scaffoldBackgroundColor: MurmoryColors.background,
+    );
   }
 
   static ThemeData dark() {
