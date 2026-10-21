@@ -58,6 +58,10 @@ jobs:
         working-directory: apps/mobile
         run: flutter pub get
 
+      - name: Make Gradle Wrapper Executable
+        working-directory: apps/mobile
+        run: chmod +x android/gradlew
+
       - name: Build Android APK
         working-directory: apps/mobile
         run: |
